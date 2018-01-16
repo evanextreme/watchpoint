@@ -2,7 +2,21 @@
 
 const functions = require('firebase-functions'); // Cloud Functions for Firebase library
 const DialogflowApp = require('actions-on-google').DialogflowApp; // Google Assistant helper library
-const request = require('request'); // Web request library
+const requestA = require('request'); // Web request library
+
+function getStats(){
+    var options = { method: 'GET',
+      url: 'https://www.owapi.net/api/v3/u/evanextreme-1109/stats',
+      headers:
+      {  'User-Agent': 'github.com/evanextreme/watchpoint',
+         'From': 'exh7928@rit.edu' }
+  };
+    requestA(options, function (error, response, body) {
+      if (error) throw new Error(error);
+
+      console.log(body);
+    });
+}
 
 exports.dialogflowFirebaseFulfillment = functions.https.onRequest((request, response) => {
   console.log('Dialogflow Request headers: ' + JSON.stringify(request.headers));
@@ -32,24 +46,19 @@ function processV1Request (request, response) {
     'input.welcome': () => {
       // Use the Actions on Google lib to respond to Google requests; for other requests use JSON
       if (requestSource === googleAssistantRequest) {
-        sendGoogleResponse('Hello, Welcome to my Dialogflow agent!'); // Send simple response to user
+        sendGoogleResponse('Hello, Welcome to my Dialogflow agent 2!'); // Send simple response to user
       } else {
-        sendResponse('Hello, Welcome to my Dialogflow agent!'); // Send simple response to user
+        sendResponse('Hello, Welcome to my Dialogflow agent 2!'); // Send simple response to user
       }
     },
-    'search.intent': () => {
-      // Use the Actions on Google lib to respond to Google requests; for other requests use JSON
-      if (requestSource === googleAssistantRequest) {
-          let testBod
-          request('http://www.google.com', function (error, response, body) {
-              console.log('error:', error); // Print the error if one occurred
-              console.log('statusCode:', response && response.statusCode); // Print the response status code if a response was received
-              console.log('body:', body); // Print the HTML for the Google homepage.
-            });
-        sendGoogleResponse('Hello, Welcome to my Dialogflow agent!'); // Send simple response to user
-      } else {
-        sendResponse('Hello, Welcome to my Dialogflow agent!'); // Send simple response to user
-      }
+    'input.search': () => {
+        getStats();
+        // Use the Actions on Google lib to respond to Google requests; for other requests use JSON
+        if (requestSource === googleAssistantRequest) {
+            sendGoogleResponse('Hello, Welcome to my Dialogflow agent 1!'); // Send simple response to user
+        } else {
+            sendResponse('Hello, Welcome to my Dialogflow agent 1!'); // Send simple response to user
+        }
     },
     // The default fallback intent has been matched, try to recover (https://dialogflow.com/docs/intents#fallback_intents)
     'input.unknown': () => {
@@ -67,7 +76,7 @@ function processV1Request (request, response) {
         let responseToUser = {
           //googleRichResponse: googleRichResponse, // Optional, uncomment to enable
           //googleOutputContexts: ['weather', 2, { ['city']: 'rome' }], // Optional, uncomment to enable
-          speech: 'This message is from Dialogflow\'s Cloud Functions for Firebase editor!', // spoken response
+          speech: 'This message is from Dialogflow\'s Cloud Functions for Firebase editor 3!', // spoken response
           text: 'This is from Dialogflow\'s Cloud Functions for Firebase editor! :-)' // displayed response
         };
         sendGoogleResponse(responseToUser);
@@ -75,8 +84,8 @@ function processV1Request (request, response) {
         let responseToUser = {
           //data: richResponsesV1, // Optional, uncomment to enable
           //outputContexts: [{'name': 'weather', 'lifespan': 2, 'parameters': {'city': 'Rome'}}], // Optional, uncomment to enable
-          speech: 'This message is from Dialogflow\'s Cloud Functions for Firebase editor!', // spoken response
-          text: 'This is from Dialogflow\'s Cloud Functions for Firebase editor! :-)' // displayed response
+          speech: ('This message is from Dialogflow\'s Cloud Functions for Firebase editor 4!'), // spoken response
+          text: ('This is from Dialogflow\'s Cloud Functions for Firebase editor! :-) ')  // displayed response
         };
         sendResponse(responseToUser);
       }
