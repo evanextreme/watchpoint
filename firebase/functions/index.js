@@ -2,21 +2,8 @@
 
 const functions = require('firebase-functions'); // Cloud Functions for Firebase library
 const DialogflowApp = require('actions-on-google').DialogflowApp; // Google Assistant helper library
-const requestA = require('request'); // Web request library
+const requestNode = require('request'); // Web request library
 
-function getStats(){
-    var options = { method: 'GET',
-      url: 'https://www.owapi.net/api/v3/u/evanextreme-1109/stats',
-      headers:
-      {  'User-Agent': 'github.com/evanextreme/watchpoint',
-         'From': 'exh7928@rit.edu' }
-  };
-    requestA(options, function (error, response, body) {
-      if (error) throw new Error(error);
-
-      console.log(body);
-    });
-}
 
 exports.dialogflowFirebaseFulfillment = functions.https.onRequest((request, response) => {
   console.log('Dialogflow Request headers: ' + JSON.stringify(request.headers));
@@ -46,19 +33,36 @@ function processV1Request (request, response) {
     'input.welcome': () => {
       // Use the Actions on Google lib to respond to Google requests; for other requests use JSON
       if (requestSource === googleAssistantRequest) {
-        sendGoogleResponse('Hello, Welcome to my Dialogflow agent 2!'); // Send simple response to user
+        sendGoogleResponse('Hello Overwatch agent, you are now logged on to Watchpoint!'); // Send simple response to user
       } else {
-        sendResponse('Hello, Welcome to my Dialogflow agent 2!'); // Send simple response to user
+        sendResponse('Hello Overwatch agent, you are now logged on to Watchpoint! 👺'); // Send simple response to user
       }
     },
     'input.search': () => {
-        getStats();
-        // Use the Actions on Google lib to respond to Google requests; for other requests use JSON
-        if (requestSource === googleAssistantRequest) {
-            sendGoogleResponse('Hello, Welcome to my Dialogflow agent 1!'); // Send simple response to user
-        } else {
-            sendResponse('Hello, Welcome to my Dialogflow agent 1!'); // Send simple response to user
-        }
+        let promise = new Promise((resolve, reject) => {
+            var options = { method: 'GET',
+              url: 'https://www.owapi.net/api/v3/u/evanextreme-1109/stats',
+              headers:
+              {  'User-Agent': 'github.com/evanextreme/watchpoint',
+                 'From': 'exh7928@rit.edu' }
+             };
+            requestNode(options, function (error, response, body) {
+                  if (error) throw new Error(error);
+                  console.log(body);
+                  let info = JSON.parse(body);
+                  console.log("rank is " + info.us.stats.competitive.overall_stats.comprank);
+                  let compRank = info.us.stats.competitive.overall_stats.comprank;
+                  resolve(compRank)
+            });
+        })
+        .then((rank) => {
+            // Use the Actions on Google lib to respond to Google requests; for other requests use JSON
+            if (requestSource === googleAssistantRequest) {
+                sendGoogleResponse('Your competitive rank is ' + rank); // Send simple response to user
+            } else {
+                sendResponse('Your competitive rank is ' + rank); // Send simple response to user
+            }
+        })
     },
     // The default fallback intent has been matched, try to recover (https://dialogflow.com/docs/intents#fallback_intents)
     'input.unknown': () => {
