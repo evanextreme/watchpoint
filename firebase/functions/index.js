@@ -3,6 +3,76 @@
 const functions = require('firebase-functions'); // Cloud Functions for Firebase library
 const DialogflowApp = require('actions-on-google').DialogflowApp; // Google Assistant helper library
 const requestNode = require('request'); // Web request library
+const dateFormat = require('dateformat'); // Date library
+const compareDates = require('compare-dates'); // Another date library
+
+function getNaturalDate(aStartDate) {
+    return new Promise((resolve, reject) => {
+        let startDate = new Date(aStartDate);
+        if (compareDates.isSame(new Date(), startDate, 'day')) {
+            resolve("today at " + dateFormat(startDate, "h TT"));
+        } else {
+            resolve("this " + dateFormat(startDate, "dddd") + " at " + dateFormat(startDate, "h TT"));
+        }
+        resolve(" but for some reason I am not sure when.")
+    })
+}
+
+function getMatchStatus(team1, team2, scores) {
+    let team1score = scores[0].value;
+    let team2score = scores[1].value;
+    if (team1score == team2score) {
+        return ("the score is tied " + team1score + " to " + team2score);
+    } else if (team2score < team1score) {
+        return (team1 + " has the lead, " + team1score + " to " + team2score)
+    } else if (team1score < team2score) {
+        return (team2 + " has the lead, " + team2score + " to " + team1score)
+    } else {
+        return ("you should run and hide because math dead")
+    }
+}
+
+function getCurrentMatch(team1, team2, game) {
+    let naturalResp;
+    naturalResp = team1.name + " is playing against ";
+    naturalResp += team2.name + " right now. Currently it is ";
+    naturalResp += game.toLowerCase() + " and ";
+    return naturalResp;
+}
+
+function getFutureMatch(team1, team2, startDate) {
+    // return new Promise((resolve, reject) => {
+        let naturalResp;
+        naturalResp = "The next match on the schedule is " + team1.name + " versus ";
+        naturalResp += team2.name + " ";
+        return(naturalResp);
+    // })
+}
+
+function contactLeagueApi() {
+    return new Promise((resolve, reject) => {
+        var options = {
+            method: 'GET',
+            url: "https://api.overwatchleague.com/live-match/?locale=en-us",
+            headers: {
+                'User-Agent': 'github.com/evanextreme/watchpoint',
+                'From': 'exh7928@rit.edu'
+            }
+        };
+        requestNode(options, function(error, response, body) {
+            if (error) throw new Error(error);
+            let resp = JSON.parse(body);
+            console.log(resp)
+            if (resp.error == 404) {
+                console.log(resp.error)
+                reject();
+            } else {
+                resolve(resp);
+            }
+
+        });
+    });
+}
 
 
 exports.dialogflowFirebaseFulfillment = functions.https.onRequest((request, response) => {
@@ -36,50 +106,59 @@ function processV1Request(request, response) {
         'input.welcome': () => {
             // Use the Actions on Google lib to respond to Google requests; for other requests use JSON
             if (requestSource === googleAssistantRequest) {
-                sendGoogleResponse('Hello Overwatch agent, you are now logged on to Watchpoint!'); // Send simple response to user
+                sendGoogleResponse('Welcome to Watchpoint!'); // Send simple response to user
+                sendGoogleResponse('Ask me any question about the Overwatch League.');
             } else {
-                sendResponse('Hello Overwatch agent, you are now logged on to Watchpoint! 👺'); // Send simple response to user
+                sendResponse('Hello Overwatch agent, you are now connected to Watchpoint! 👺'); // Send simple response to user
             }
         },
         'getGameInfo': () => {
-            let promise = new Promise((resolve, reject) => {
-                    var options = {
-                        method: 'GET',
-                        url: "https://api.overwatchleague.com/live-match?locale=en-us",
-                        headers: {
-                            'User-Agent': 'github.com/evanextreme/watchpoint',
-                            'From': 'exh7928@rit.edu'
-                        }
-                    };
-                    requestNode(options, function(error, response, body) {
-                        if (error) throw new Error(error);
-                        console.log(body);
-                        let resp = JSON.parse(body);
-                        if(resp.error == 404){
-                            reject(new Error("404 found"));
-                        } else {
-                            let liveMatch = resp.data.liveMatch;
-                            resolve(liveMatch);
-                        }
+            contactLeagueApi()
+                // TODO refactor promise chain
+                .then((resp) => {
+                        let textResp;
+                        let liveMatch = resp.data.liveMatch;
+                        let team1 = liveMatch.competitors[0];
+                        let team2 = liveMatch.competitors[1];
+                        let scores = liveMatch.scores;
+                        let status = liveMatch.liveStatus;
+                        let startDate = liveMatch.startDateTS;
+                        let game = resp.meta.strings['owl.live-stream.game'];
 
-                    });
-                })
-                .then((liveMatch) => {
-                    let textResp;
-                    if (liveMatch.liveStatus == "UPCOMING"){
-                        textResp = "The next match is ";
-                    }
-                    else {
-                        textResp = "Currently, ";
-                    }
-                    textResp = competitors[]
+                        console.log(team1 + team2 + scores + game + startDate + status)
+                        if (status == "UPCOMING") {
+                            return getNaturalDate(startDate)
+                            .then((naturalDate) => {
+                                return (getFutureMatch(team1, team2, game) + naturalDate);
+                            })
+                        }
+                        else {
+                            return getCurrentMatch(team1, team2, scores)
+                            .then((naturalResp) => {
+                                return naturalResp + getMatchStatus()
+                            })
+                        }
+                    })
                     // Use the Actions on Google lib to respond to Google requests; for other requests use JSON
-                    if (requestSource === googleAssistantRequest) {
-                        sendGoogleResponse(textResp); // Send simple response to user
-                    } else {
-                        sendResponse(textResp); // Send simple response to user
-                    }
-                })
+                    .then((textResp) => {
+                        console.log("textResp = " + textResp)
+                        let responseToUser = {
+                            //googleRichResponse: googleRichResponse, // Optional, uncomment to enable
+                            //googleOutputContexts: ['weather', 2, { ['city']: 'rome' }], // Optional, uncomment to enable
+                            speech: textResp, // spoken response
+                            text: textResp // displayed response
+                        };
+                        console.log("responseToUser = " + responseToUser)
+                        if (requestSource === googleAssistantRequest) {
+                            sendGoogleResponse(responseToUser); // Send simple response to user
+                        } else {
+                            sendResponse(responseToUser); // Send simple response to user
+                        }
+                    })
+                    .catch(function(error) {
+                        console.log(error)
+                        sendResponse("Looks like the Overwatch League website is down right now.")
+                    })
         },
         'input.search': () => {
             console.log("params " + parameters.user);
@@ -97,7 +176,7 @@ function processV1Request(request, response) {
                         if (error) throw new Error(error);
                         console.log(body);
                         let info = JSON.parse(body);
-                        if(info.error == 404){
+                        if (info.error == 404) {
                             reject(new Error("T"));
                         } else {
                             console.log("rank is " + info.us.stats.competitive.overall_stats.comprank);
