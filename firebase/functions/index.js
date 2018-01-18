@@ -34,7 +34,23 @@ function getMatchStatus(team1, team2, scores) {
     })
 }
 
-function getCurrentMap(games){
+function getCurrentGame(games) {
+    return new Promise((resolve, reject) => {
+        let currentGame;
+        for (let i = 0; i < games.length; i++) {
+            if (games[i] == "IN_PROGRESS") {
+                currentGame = games[i];
+            }
+        }
+        if (currentMap) {
+            resolve(currentGame);
+        } else {
+            reject();
+        }
+    })
+}
+
+function getGameStatus(game) {
     return new Promise((resolve, reject) => {
         let currentMap;
         for (let i = 1; i <= games.length; i++) {
@@ -42,48 +58,47 @@ function getCurrentMap(games){
                 currentMap = games[i];
             }
         }
-        if (currentMap != NULL) {
-            resolve(" are playing on " + completedGames);
-        }
-        else {
-
+        if (currentMap) {
+            resolve("Currently it is on " + completecurrentMap + " with the in game score being " +
+                game.map.team1 + " to " + game.map.team2 + ", for the " + team1 + " and " + team2 + " respectively"
+            );
+        } else {
+            resolve("Nothing is being played right now. Ask me again when the league is live.");
         }
     })
 }
 
+
 function getCompletedGames(games) {
     return new Promise((resolve, reject) => {
-        let completedGames = 1;
-        for (let i = 1; i <= games.length; i++) {
-            if (games[i] == "CONCLUDED") {
-                i++;
+        let completedGames;
+        for (completedGames = 0; completedGames <= games.length; completedGames++) {
+            if (games[i] != "CONCLUDED") {
+                break;
             }
         }
-        resolve("It is game " + completedGames);
+        resolve(completedGames);
     })
 }
 
 function getCurrentMatch(team1, team2, game) {
     return new Promise((resolve, reject) => {
         resolve(team1.name + " is playing against " +
-                team2.name + " right now. ");
+            team2.name + " right now. ");
     });
 }
 
 function getFutureMatch(team1, team2, startDate) {
     return new Promise((resolve, reject) => {
-        let naturalResp;
-        naturalResp = "The next match on the schedule is " + team1.name + " versus ";
-        naturalResp += team2.name + " ";
-        resolve (naturalResp);
+        resolve(team1.name + " will be playing against " + team2.name);
     })
 }
 
-function contactLeagueApi() {
+function contactOwlApi(requestUrl) {
     return new Promise((resolve, reject) => {
         var options = {
             method: 'GET',
-            url: "https://api.overwatchleague.com/live-match/?locale=en-us",
+            url: requestUrl,
             headers: {
                 'User-Agent': 'github.com/evanextreme/watchpoint',
                 'From': 'exh7928@rit.edu'
@@ -99,11 +114,21 @@ function contactLeagueApi() {
             } else {
                 resolve(resp);
             }
-
         });
     });
 }
 
+function requestLiveMatch() {
+    return contactOwlApi('https://api.overwatchleague.com/live-match/?locale=en-us')
+}
+
+function requestSchedule() {
+    return contactOwlApi('https://api.overwatchleague.com/schedule/?locale=en-us')
+}
+
+function requestStandings() {
+    return contactOwlApi('https://api.overwatchleague.com/standings/?locale=en-us')
+}
 
 exports.dialogflowFirebaseFulfillment = functions.https.onRequest((request, response) => {
     console.log('Dialogflow Request headers: ' + JSON.stringify(request.headers));
@@ -142,12 +167,49 @@ function processV1Request(request, response) {
                 sendResponse('Hello Overwatch agent, you are now connected to Watchpoint! 👺'); // Send simple response to user
             }
         },
-        'getGameInfo': () => {
-            contactLeagueApi()
+        'welcome': () => {
+            let textResp = "Welcome to Watchpoint, your portal to the Overwatch League!"
+
+            requestLiveMatch()
+                .then((resp) => {
+                    let status = resp.data.liveMatch.status;
+                    if (status == "UPCOMING") {
+                        textResp += getFutureMatch(team1, team2, startDate)
+                            .then((futureMatch) => {
+                                return ("The next scheduled match is " + futureMatch +
+                                    " " + naturalDate);
+                            });
+                    }
+                    let responseToUser = {
+                        //googleRichResponse: googleRichResponse, // Optional, uncomment to enable
+                        //googleOutputContexts: ['weather', 2, { ['city']: 'rome' }], // Optional, uncomment to enable
+                        speech: textResp, // spoken response
+                        text: textResp // displayed response
+                    };
+                    if (requestSource === googleAssistantRequest) {
+                        sendGoogleResponse(responseToUser); // Send simple response to user
+                    } else {
+                        sendResponse(responseToUser); // Send simple response to user
+                    }
+                })
+                .catch(function(error) {
+                    console.log(error)
+                    sendResponse("Sorry, but i'm having trouble talking to the Overwatch League right now. Try again another time.")
+                })
+            // Use the Actions on Google lib to respond to Google requests; for other requests use JSON
+            if (requestSource === googleAssistantRequest) {
+                sendGoogleResponse('Welcome to Watchpoint!'); // Send simple response to user
+                sendGoogleResponse('Ask me any question about the Overwatch League.');
+            } else {
+                sendResponse('Hello Overwatch agent, you are now connected to Watchpoint! 👺'); // Send simple response to user
+            }
+        },
+        'getCurrentMatch': () => {
+            requestLiveMatch()
                 // TODO refactor promise chain
                 .then((resp) => {
-                    let textResp;
                     let liveMatch = resp.data.liveMatch;
+                    let matchId = liveMatch.id;
                     let team1 = liveMatch.competitors[0];
                     let team2 = liveMatch.competitors[1];
                     let scores = liveMatch.scores;
@@ -155,27 +217,68 @@ function processV1Request(request, response) {
                     let startDate = liveMatch.startDateTS;
                     let games = liveMatch.games;
 
+
                     if (status == "UPCOMING") {
+                        //TODO fix promises when UPCOMING
                         return getNaturalDate(startDate)
                             .then((naturalDate) => {
-                                return (getFutureMatch(team1, team2, game) + naturalDate);
+                                return getFutureMatch(team1, team2, startDate)
+                                    .then((futureMatch) => {
+                                        return (liveMatch, (futureMatch + " " + naturalDate))
+                                    });
                             })
                     } else {
-                        console.log("hit")
                         return getCurrentMatch(team1, team2, scores)
                             .then((currentMatch) => {
                                 return getCompletedGames(games)
-                                .then((completedGames) => { return currentMatch + completedGames })
-                            .then((completedGames) => {
-                                return getMatchStatus(team1, team2, scores)
-                                .then((matchStatus) => { return completedGames + matchStatus })
+                                    .then((completedGames) => {
+                                        return (currentMatch + completedGames)
+                                    })
+                                    .then((completedGames) => {
+                                        return getMatchStatus(team1, team2, scores)
+                                            .then((matchStatus) => {
+                                                return (liveMatch, (completedGames + matchStatus))
+                                            })
+                                    })
                             })
-                    })
-                }
-            })
+                    }
+                })
                 // Use the Actions on Google lib to respond to Google requests; for other requests use JSON
+                .then((liveMatch, responseText) => {
+                    console.log("livematch " + liveMatch)
+
+                    let responseToUser = {
+                        //googleRichResponse: googleRichResponse, // Optional, uncomment to enable
+                        googleOutputContexts: [{match_id : liveMatch.id,
+                        match_team1 : liveMatch.competitors[0],
+                        match_team2 : liveMatch.competitors[1],
+                        match_scores : liveMatch.scores,
+                        match_status : liveMatch.liveStatus,
+                        match_startDate : liveMatch.startDateTS,
+                        match_games : liveMatch.games}],
+                        speech: 'This message is from Dialogflow\'s Cloud Functions for Firebase editor 3!', // spoken response
+                        text: 'This is from Dialogflow\'s Cloud Functions for Firebase editor! :-)' // displayed response
+                    };
+
+                    if (requestSource === googleAssistantRequest) {
+                        sendGoogleResponse(responseToUser); // Send simple response to user
+                    } else {
+                        sendResponse(responseToUser); // Send simple response to user
+                    }
+                })
+                .catch(function(error) {
+                    console.log(error)
+                    sendResponse("Sorry, but i'm having trouble talking to the Overwatch League right now, and couldn't find the match you wanted. Try again another time.")
+                })
+        },
+        'getCurrentGame': () => {
+            requestLiveMatch()
+                .then((resp) => {
+                    let liveMatch = resp.data.liveMatch.games;
+                    return getCurrentGame(games)
+                        .then((currentGame) => {});
+                })
                 .then((textResp) => {
-                    console.log("textResp = " + textResp)
                     let responseToUser = {
                         //googleRichResponse: googleRichResponse, // Optional, uncomment to enable
                         //googleOutputContexts: ['weather', 2, { ['city']: 'rome' }], // Optional, uncomment to enable
@@ -188,11 +291,10 @@ function processV1Request(request, response) {
                     } else {
                         sendResponse(responseToUser); // Send simple response to user
                     }
-                    DialogflowApp.tell();
                 })
                 .catch(function(error) {
                     console.log(error)
-                    sendResponse("Sorry, but i'm having trouble talking to the Overwatch League right now. Try again another time.")
+                    sendResponse("Sorry, but i'm having trouble talking to the Overwatch League right now, and couldn't find the game you wanted. Try again another time.")
                 })
         },
         'input.search': () => {
