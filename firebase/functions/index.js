@@ -9,10 +9,11 @@ const compareDates = require('compare-dates'); // Another date library
 function getNaturalDate(aStartDate) {
     return new Promise((resolve, reject) => {
         let startDate = new Date(aStartDate);
+        startDate = compareDates.subtract(startDate, 5, 'hour');
         if (compareDates.isSame(new Date(), startDate, 'day')) {
-            resolve("today at " + dateFormat(startDate, "h TT"));
+            resolve("today at " + dateFormat(startDate, "h TT") +  " Eastern Standard Time.");
         } else {
-            resolve("this " + dateFormat(startDate, "dddd") + " at " + dateFormat(startDate, "h TT"));
+            resolve("this " + dateFormat(startDate, "dddd") + " at " + dateFormat(startDate, "h TT") + " Eastern Standard Time.");
         }
         resolve(" but for some reason I am not sure when.")
     })
@@ -73,7 +74,7 @@ function getCompletedGames(games) {
     return new Promise((resolve, reject) => {
         let completedGames;
         for (completedGames = 0; completedGames <= games.length; completedGames++) {
-            if (games[i] != "CONCLUDED") {
+            if (games[completedGames] != "CONCLUDED") {
                 break;
             }
         }
@@ -107,7 +108,6 @@ function contactOwlApi(requestUrl) {
         requestNode(options, function(error, response, body) {
             if (error) throw new Error(error);
             let resp = JSON.parse(body);
-            console.log(resp)
             if (resp.error == 404) {
                 console.log(resp.error)
                 reject();
@@ -119,7 +119,26 @@ function contactOwlApi(requestUrl) {
 }
 
 function requestLiveMatch() {
-    return contactOwlApi('https://api.overwatchleague.com/live-match/?locale=en-us')
+    return new Promise((resolve, reject) => {
+        var options = {
+            method: 'GET',
+            url: 'https://api.overwatchleague.com/live-match/?locale=en-us',
+            headers: {
+                'User-Agent': 'github.com/evanextreme/watchpoint',
+                'From': 'exh7928@rit.edu'
+            }
+        };
+        requestNode(options, function(error, response, body) {
+            if (error) throw new Error(error);
+            let resp = JSON.parse(body);
+            if (resp.error == 404) {
+                console.log(resp.error)
+                reject();
+            } else {
+                resolve(resp);
+            }
+        });
+    });
 }
 
 function requestSchedule() {
@@ -131,6 +150,28 @@ function requestStandings() {
 }
 
 exports.dialogflowFirebaseFulfillment = functions.https.onRequest((request, response) => {
+
+    //
+    // const requestPermission = (app) => {
+    //   app.askForPermission('To locate you', app.SupportedPermissions.DEVICE_PRECISE_LOCATION);
+    // };
+    //
+    // const userInfo = (app) => {
+    //     if (app.isPermissionGranted()) {
+    //         const address = app.getDeviceLocation().address;
+    //         app.tell(`You are at ${address}`);
+    //     } else {
+    //         app.tell('Sorry, I could not figure out where you are.');
+    //     }
+    // };
+    //
+    // const app = new DialogflowApp({request, response});
+    // const actions = new Map();
+    // actions.set('request_permission', requestPermission);
+    // actions.set('user_info', userInfo);
+    // app.handleRequest(actions);
+
+
     console.log('Dialogflow Request headers: ' + JSON.stringify(request.headers));
     console.log('Dialogflow Request body: ' + JSON.stringify(request.body));
     if (request.body.result) {
@@ -141,6 +182,7 @@ exports.dialogflowFirebaseFulfillment = functions.https.onRequest((request, resp
         console.log('Invalid Request');
         return response.status(400).end('Invalid Webhook Request (expecting v1 or v2 webhook request)');
     }
+    app.tell();
 });
 /*
  * Function to handle v1 webhook requests from Dialogflow
@@ -158,28 +200,40 @@ function processV1Request(request, response) {
     // Create handlers for Dialogflow actions as well as a 'default' handler
     const actionHandlers = {
         // The default welcome intent has been matched, welcome the user (https://dialogflow.com/docs/events#default_welcome_intent)
-        'input.welcome': () => {
-            // Use the Actions on Google lib to respond to Google requests; for other requests use JSON
-            if (requestSource === googleAssistantRequest) {
-                sendGoogleResponse('Welcome to Watchpoint!'); // Send simple response to user
-                sendGoogleResponse('Ask me any question about the Overwatch League.');
-            } else {
-                sendResponse('Hello Overwatch agent, you are now connected to Watchpoint! 👺'); // Send simple response to user
-            }
-        },
+        // 'input.welcome': () => {
+        //     // Use the Actions on Google lib to respond to Google requests; for other requests use JSON
+        //     if (requestSource === googleAssistantRequest) {
+        //         sendGoogleResponse('Welcome to Watchpoint!'); // Send simple response to user
+        //         sendGoogleResponse('Ask me any question about the Overwatch League.');
+        //     } else {
+        //         sendResponse('Hello Overwatch agent, you are now connected to Watchpoint! 👺'); // Send simple response to user
+        //     }
+        // },
         'welcome': () => {
-            let textResp = "Welcome to Watchpoint, your portal to the Overwatch League!"
-
             requestLiveMatch()
                 .then((resp) => {
-                    let status = resp.data.liveMatch.status;
+                    let liveMatch = resp.data.liveMatch;
+                    let status = liveMatch.liveStatus;
+                    let team1 = liveMatch.competitors[0];
+                    let team2 = liveMatch.competitors[1];
                     if (status == "UPCOMING") {
-                        textResp += getFutureMatch(team1, team2, startDate)
+                        let startDate = liveMatch.startDateTS;
+                        return getFutureMatch(team1, team2, startDate)
                             .then((futureMatch) => {
-                                return ("The next scheduled match is " + futureMatch +
-                                    " " + naturalDate);
+                                return ("Welcome to Watchpoint, your portal to the Overwatch League! The next scheduled match is " +
+                                    futureMatch + " " + naturalDate + '. To get more info on a match, say "tell me about the current match"');
+                            });
+                    } else {
+                        let games = liveMatch.games;
+                        return getCurrentMatch(team1, team2, games)
+                            .then((currentMatch) => {
+                                return ("Welcome to Watchpoint, your portal to the Overwatch League! Looks like the league is live right now! " +
+                                    futureMatch + ". You can watch it live on Twitch, and OverwatchLeague.com. Try asking me questions like... What is the match score? What map are they on? and more. ");
                             });
                     }
+                })
+                .then((textResp) => {
+                    console.log("textResp " + textResp)
                     let responseToUser = {
                         //googleRichResponse: googleRichResponse, // Optional, uncomment to enable
                         //googleOutputContexts: ['weather', 2, { ['city']: 'rome' }], // Optional, uncomment to enable
@@ -196,15 +250,17 @@ function processV1Request(request, response) {
                     console.log(error)
                     sendResponse("Sorry, but i'm having trouble talking to the Overwatch League right now. Try again another time.")
                 })
+
             // Use the Actions on Google lib to respond to Google requests; for other requests use JSON
-            if (requestSource === googleAssistantRequest) {
-                sendGoogleResponse('Welcome to Watchpoint!'); // Send simple response to user
-                sendGoogleResponse('Ask me any question about the Overwatch League.');
-            } else {
-                sendResponse('Hello Overwatch agent, you are now connected to Watchpoint! 👺'); // Send simple response to user
-            }
+            // if (requestSource === googleAssistantRequest) {
+            //     sendGoogleResponse('Welcome to Watchpoint!'); // Send simple response to user
+            //     sendGoogleResponse('Ask me any question about the Overwatch League.');
+            // } else {
+            //     sendResponse('Hello Overwatch agent, you are now connected to Watchpoint! 👺'); // Send simple response to user
+            // }
         },
         'getCurrentMatch': () => {
+            // Ask for one permission
             requestLiveMatch()
                 // TODO refactor promise chain
                 .then((resp) => {
@@ -224,7 +280,7 @@ function processV1Request(request, response) {
                             .then((naturalDate) => {
                                 return getFutureMatch(team1, team2, startDate)
                                     .then((futureMatch) => {
-                                        return (liveMatch, (futureMatch + " " + naturalDate))
+                                        return [liveMatch, (futureMatch + " " + naturalDate)]
                                     });
                             })
                     } else {
@@ -232,33 +288,37 @@ function processV1Request(request, response) {
                             .then((currentMatch) => {
                                 return getCompletedGames(games)
                                     .then((completedGames) => {
-                                        return (currentMatch + completedGames)
+                                        if (completedGames == 0) {
+                                            return ["", (currentMatch + " and the first game is about to start. ")]
+                                        } else {
+                                            return ["YES", (currentMatch + " It is game " + completedGames + ", ")]
+                                        }
                                     })
-                                    .then((completedGames) => {
-                                        return getMatchStatus(team1, team2, scores)
-                                            .then((matchStatus) => {
-                                                return (liveMatch, (completedGames + matchStatus))
-                                            })
+                                    .then((data) => {
+                                        let completedGames = data[1];
+                                        if (data[0]) {
+                                            return getMatchStatus(team1, team2, scores)
+                                                .then((matchStatus) => {
+                                                    return [liveMatch, (completedGames + matchStatus)]
+                                                })
+                                        } else {
+                                            return [liveMatch, (completedGames + matchStatus)];
+                                        }
+
                                     })
                             })
                     }
                 })
                 // Use the Actions on Google lib to respond to Google requests; for other requests use JSON
-                .then((liveMatch, responseText) => {
-                    console.log("livematch " + liveMatch)
-
+                .then((data) => {
+                    let liveMatch = data[0];
+                    let responseText = data[1];
+                    console.log("liveMatch" + liveMatch)
                     let responseToUser = {
-                        //googleRichResponse: googleRichResponse, // Optional, uncomment to enable
-                        googleOutputContexts: [{match_id : liveMatch.id,
-                        match_team1 : liveMatch.competitors[0],
-                        match_team2 : liveMatch.competitors[1],
-                        match_scores : liveMatch.scores,
-                        match_status : liveMatch.liveStatus,
-                        match_startDate : liveMatch.startDateTS,
-                        match_games : liveMatch.games}],
-                        speech: 'This message is from Dialogflow\'s Cloud Functions for Firebase editor 3!', // spoken response
-                        text: 'This is from Dialogflow\'s Cloud Functions for Firebase editor! :-)' // displayed response
+                        speech: responseText, // spoken response
+                        text: responseText, // displayed response
                     };
+                    console.log("responseToUser " + responseToUser)
 
                     if (requestSource === googleAssistantRequest) {
                         sendGoogleResponse(responseToUser); // Send simple response to user
