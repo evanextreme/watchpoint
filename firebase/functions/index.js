@@ -19,34 +19,64 @@ function getNaturalDate(aStartDate) {
 }
 
 function getMatchStatus(team1, team2, scores) {
-    let team1score = scores[0].value;
-    let team2score = scores[1].value;
-    if (team1score == team2score) {
-        return ("the score is tied " + team1score + " to " + team2score);
-    } else if (team2score < team1score) {
-        return (team1 + " has the lead, " + team1score + " to " + team2score)
-    } else if (team1score < team2score) {
-        return (team2 + " has the lead, " + team2score + " to " + team1score)
-    } else {
-        return ("you should run and hide because math dead")
-    }
+    return new Promise((resolve, reject) => {
+        let team1score = scores[0].value;
+        let team2score = scores[1].value;
+        if (team1score == team2score) {
+            resolve(", and the score is tied " + team1score + " to " + team2score);
+        } else if (team2score < team1score) {
+            resolve(", and " + team1.name + " has the lead, " + team1score + " to " + team2score)
+        } else if (team1score < team2score) {
+            resolve(", and " + team2.name + " has the lead, " + team2score + " to " + team1score)
+        } else {
+            resolve("you should run and hide because math dead")
+        }
+    })
+}
+
+function getCurrentMap(games){
+    return new Promise((resolve, reject) => {
+        let currentMap;
+        for (let i = 1; i <= games.length; i++) {
+            if (games[i] == "IN_PROGRESS") {
+                currentMap = games[i];
+            }
+        }
+        if (currentMap != NULL) {
+            resolve(" are playing on " + completedGames);
+        }
+        else {
+
+        }
+    })
+}
+
+function getCompletedGames(games) {
+    return new Promise((resolve, reject) => {
+        let completedGames = 1;
+        for (let i = 1; i <= games.length; i++) {
+            if (games[i] == "CONCLUDED") {
+                i++;
+            }
+        }
+        resolve("It is game " + completedGames);
+    })
 }
 
 function getCurrentMatch(team1, team2, game) {
-    let naturalResp;
-    naturalResp = team1.name + " is playing against ";
-    naturalResp += team2.name + " right now. Currently it is ";
-    naturalResp += game.toLowerCase() + " and ";
-    return naturalResp;
+    return new Promise((resolve, reject) => {
+        resolve(team1.name + " is playing against " +
+                team2.name + " right now. ");
+    });
 }
 
 function getFutureMatch(team1, team2, startDate) {
-    // return new Promise((resolve, reject) => {
+    return new Promise((resolve, reject) => {
         let naturalResp;
         naturalResp = "The next match on the schedule is " + team1.name + " versus ";
         naturalResp += team2.name + " ";
-        return(naturalResp);
-    // })
+        resolve (naturalResp);
+    })
 }
 
 function contactLeagueApi() {
@@ -116,49 +146,54 @@ function processV1Request(request, response) {
             contactLeagueApi()
                 // TODO refactor promise chain
                 .then((resp) => {
-                        let textResp;
-                        let liveMatch = resp.data.liveMatch;
-                        let team1 = liveMatch.competitors[0];
-                        let team2 = liveMatch.competitors[1];
-                        let scores = liveMatch.scores;
-                        let status = liveMatch.liveStatus;
-                        let startDate = liveMatch.startDateTS;
-                        let game = resp.meta.strings['owl.live-stream.game'];
+                    let textResp;
+                    let liveMatch = resp.data.liveMatch;
+                    let team1 = liveMatch.competitors[0];
+                    let team2 = liveMatch.competitors[1];
+                    let scores = liveMatch.scores;
+                    let status = liveMatch.liveStatus;
+                    let startDate = liveMatch.startDateTS;
+                    let games = liveMatch.games;
 
-                        console.log(team1 + team2 + scores + game + startDate + status)
-                        if (status == "UPCOMING") {
-                            return getNaturalDate(startDate)
+                    if (status == "UPCOMING") {
+                        return getNaturalDate(startDate)
                             .then((naturalDate) => {
                                 return (getFutureMatch(team1, team2, game) + naturalDate);
                             })
-                        }
-                        else {
-                            return getCurrentMatch(team1, team2, scores)
-                            .then((naturalResp) => {
-                                return naturalResp + getMatchStatus()
+                    } else {
+                        console.log("hit")
+                        return getCurrentMatch(team1, team2, scores)
+                            .then((currentMatch) => {
+                                return getCompletedGames(games)
+                                .then((completedGames) => { return currentMatch + completedGames })
+                            .then((completedGames) => {
+                                return getMatchStatus(team1, team2, scores)
+                                .then((matchStatus) => { return completedGames + matchStatus })
                             })
-                        }
                     })
-                    // Use the Actions on Google lib to respond to Google requests; for other requests use JSON
-                    .then((textResp) => {
-                        console.log("textResp = " + textResp)
-                        let responseToUser = {
-                            //googleRichResponse: googleRichResponse, // Optional, uncomment to enable
-                            //googleOutputContexts: ['weather', 2, { ['city']: 'rome' }], // Optional, uncomment to enable
-                            speech: textResp, // spoken response
-                            text: textResp // displayed response
-                        };
-                        console.log("responseToUser = " + responseToUser)
-                        if (requestSource === googleAssistantRequest) {
-                            sendGoogleResponse(responseToUser); // Send simple response to user
-                        } else {
-                            sendResponse(responseToUser); // Send simple response to user
-                        }
-                    })
-                    .catch(function(error) {
-                        console.log(error)
-                        sendResponse("Looks like the Overwatch League website is down right now.")
-                    })
+                }
+            })
+                // Use the Actions on Google lib to respond to Google requests; for other requests use JSON
+                .then((textResp) => {
+                    console.log("textResp = " + textResp)
+                    let responseToUser = {
+                        //googleRichResponse: googleRichResponse, // Optional, uncomment to enable
+                        //googleOutputContexts: ['weather', 2, { ['city']: 'rome' }], // Optional, uncomment to enable
+                        speech: textResp, // spoken response
+                        text: textResp // displayed response
+                    };
+                    console.log("responseToUser = " + responseToUser)
+                    if (requestSource === googleAssistantRequest) {
+                        sendGoogleResponse(responseToUser); // Send simple response to user
+                    } else {
+                        sendResponse(responseToUser); // Send simple response to user
+                    }
+                    DialogflowApp.tell();
+                })
+                .catch(function(error) {
+                    console.log(error)
+                    sendResponse("Sorry, but i'm having trouble talking to the Overwatch League right now. Try again another time.")
+                })
         },
         'input.search': () => {
             console.log("params " + parameters.user);
