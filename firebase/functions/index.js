@@ -150,28 +150,6 @@ function requestStandings() {
 }
 
 exports.dialogflowFirebaseFulfillment = functions.https.onRequest((request, response) => {
-
-    //
-    // const requestPermission = (app) => {
-    //   app.askForPermission('To locate you', app.SupportedPermissions.DEVICE_PRECISE_LOCATION);
-    // };
-    //
-    // const userInfo = (app) => {
-    //     if (app.isPermissionGranted()) {
-    //         const address = app.getDeviceLocation().address;
-    //         app.tell(`You are at ${address}`);
-    //     } else {
-    //         app.tell('Sorry, I could not figure out where you are.');
-    //     }
-    // };
-    //
-    // const app = new DialogflowApp({request, response});
-    // const actions = new Map();
-    // actions.set('request_permission', requestPermission);
-    // actions.set('user_info', userInfo);
-    // app.handleRequest(actions);
-
-
     console.log('Dialogflow Request headers: ' + JSON.stringify(request.headers));
     console.log('Dialogflow Request body: ' + JSON.stringify(request.body));
     if (request.body.result) {
@@ -182,7 +160,6 @@ exports.dialogflowFirebaseFulfillment = functions.https.onRequest((request, resp
         console.log('Invalid Request');
         return response.status(400).end('Invalid Webhook Request (expecting v1 or v2 webhook request)');
     }
-    app.tell();
 });
 /*
  * Function to handle v1 webhook requests from Dialogflow
@@ -200,15 +177,6 @@ function processV1Request(request, response) {
     // Create handlers for Dialogflow actions as well as a 'default' handler
     const actionHandlers = {
         // The default welcome intent has been matched, welcome the user (https://dialogflow.com/docs/events#default_welcome_intent)
-        // 'input.welcome': () => {
-        //     // Use the Actions on Google lib to respond to Google requests; for other requests use JSON
-        //     if (requestSource === googleAssistantRequest) {
-        //         sendGoogleResponse('Welcome to Watchpoint!'); // Send simple response to user
-        //         sendGoogleResponse('Ask me any question about the Overwatch League.');
-        //     } else {
-        //         sendResponse('Hello Overwatch agent, you are now connected to Watchpoint! 👺'); // Send simple response to user
-        //     }
-        // },
         'welcome': () => {
             requestLiveMatch()
                 .then((resp) => {
@@ -250,14 +218,6 @@ function processV1Request(request, response) {
                     console.log(error)
                     sendResponse("Sorry, but i'm having trouble talking to the Overwatch League right now. Try again another time.")
                 })
-
-            // Use the Actions on Google lib to respond to Google requests; for other requests use JSON
-            // if (requestSource === googleAssistantRequest) {
-            //     sendGoogleResponse('Welcome to Watchpoint!'); // Send simple response to user
-            //     sendGoogleResponse('Ask me any question about the Overwatch League.');
-            // } else {
-            //     sendResponse('Hello Overwatch agent, you are now connected to Watchpoint! 👺'); // Send simple response to user
-            // }
         },
         'getCurrentMatch': () => {
             // Ask for one permission
@@ -289,22 +249,21 @@ function processV1Request(request, response) {
                                 return getCompletedGames(games)
                                     .then((completedGames) => {
                                         if (completedGames == 0) {
-                                            return ["", (currentMatch + " and the first game is about to start. ")]
+                                            return ["", (currentMatch + " The first game is about to start. ")]
                                         } else {
                                             return ["YES", (currentMatch + " It is game " + completedGames + ", ")]
                                         }
                                     })
                                     .then((data) => {
                                         let completedGames = data[1];
-                                        if (data[0]) {
+                                        if (data[0] == "YES") {
                                             return getMatchStatus(team1, team2, scores)
                                                 .then((matchStatus) => {
                                                     return [liveMatch, (completedGames + matchStatus)]
                                                 })
                                         } else {
-                                            return [liveMatch, (completedGames + matchStatus)];
+                                            return [liveMatch, (completedGames)];
                                         }
-
                                     })
                             })
                     }
@@ -312,16 +271,17 @@ function processV1Request(request, response) {
                 // Use the Actions on Google lib to respond to Google requests; for other requests use JSON
                 .then((data) => {
                     let liveMatch = data[0];
-                    let responseText = data[1];
+                    let textResp = data[1];
                     console.log("liveMatch" + liveMatch)
                     let responseToUser = {
-                        speech: responseText, // spoken response
-                        text: responseText, // displayed response
+                        speech: textResp, // spoken response
+                        text: textResp, // displayed response
                     };
                     console.log("responseToUser " + responseToUser)
 
                     if (requestSource === googleAssistantRequest) {
-                        sendGoogleResponse(responseToUser); // Send simple response to user
+                        app.tell(textResp);
+                        // sendGoogleResponse(responseToUser); // Send simple response to user
                     } else {
                         sendResponse(responseToUser); // Send simple response to user
                     }
@@ -347,7 +307,8 @@ function processV1Request(request, response) {
                     };
                     console.log("responseToUser = " + responseToUser)
                     if (requestSource === googleAssistantRequest) {
-                        sendGoogleResponse(responseToUser); // Send simple response to user
+                        app.tell(textResp);
+                        // sendGoogleResponse(responseToUser); // Send simple response to user
                     } else {
                         sendResponse(responseToUser); // Send simple response to user
                     }
