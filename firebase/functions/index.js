@@ -120,26 +120,7 @@ function contactOwlApi(requestUrl) {
 }
 
 function requestLiveMatch() {
-    return new Promise((resolve, reject) => {
-        var options = {
-            method: 'GET',
-            url: 'https://api.overwatchleague.com/live-match/?locale=en-us',
-            headers: {
-                'User-Agent': 'github.com/evanextreme/watchpoint',
-                'From': 'exh7928@rit.edu'
-            }
-        };
-        requestNode(options, function(error, response, body) {
-            if (error) throw new Error(error);
-            let resp = JSON.parse(body);
-            if (resp.error == 404) {
-                console.log(resp.error)
-                reject();
-            } else {
-                resolve(resp);
-            }
-        });
-    });
+    return contactOwlApi('https://api.overwatchleague.com/live-match/?locale=en-us');
 }
 
 function requestSchedule() {
@@ -363,6 +344,27 @@ function processV1Request(request, response) {
                     app.tell("Sorry, but i'm having trouble talking to the Overwatch League right now, and couldn't find the game you wanted. Try again another time.")
                     throw error
                 })
+        },
+        'getStandings': () => {
+            let division = (parameters.division === "Atlantic") ? 79 : 80;
+            requestStandings(division)
+            .then((resp) => {
+                // Atlantic = 79, Pacific = 80
+                // Parsing a JSON with a number as a key is tricky. Brackets seem to be the best solution
+                var dataArr = (division === 79) ? resp.season.division['79'] : resp.season.division['80'];
+                
+                for(var i = 0; i < dataArr.length; i++) {
+                    if(parameters.teamname === dataArr[i].name) {
+                        var resp = "The " + parameters.teamname + " have " + dataArr[i].standings.wins + " wins and " + dataArr[i].standings.losses + " losses for a total of " + dataArr[i].standings.points + " points.";
+                        if (requestSource === googleAssistantRequest) {
+                            sendGoogleResponse(resp);
+                        } else {
+                            sendResponse(resp);
+                        }
+                        break;
+                    }
+                }
+            })
         },
         'input.search': () => {
             console.log("params " + parameters.user);
