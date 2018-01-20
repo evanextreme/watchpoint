@@ -51,21 +51,21 @@ function getCurrentGame(games) {
     })
 }
 
-function getGameStatus(game) {
+function getGameStatus(team1, team2, game) {
+
     return new Promise((resolve, reject) => {
-        let currentMap;
-        for (let i = 1; i <= games.length; i++) {
-            if (games[i] == "IN_PROGRESS") {
-                currentMap = games[i];
-            }
+        let winningTeam;
+        if(game.attributes.mapScore.team1 < game.attributes.mapScore.team2) {
+            winningTeam = team2 + " has the lead, ";
         }
-        if (currentMap) {
-            resolve("Currently it is on " + completecurrentMap + " with the in game score being " +
-                game.map.team1 + " to " + game.map.team2 + ", for the " + team1 + " and " + team2 + " respectively"
-            );
-        } else {
-            resolve("Nothing is being played right now. Ask me again when the league is live.");
+        else if (game.attributes.mapScore.team2 < game.attributes.mapScore.team1){
+            winningTeam = team1 + " has the lead, "
         }
+        else {
+            winningTeam = " It is tied,"
+        }
+        resolve("Currently they are playing on " + game.attributes.junkertown + ". " + + " with the in game score being " +
+            game.mapScore.team1 + " to " + game.mapScore.team2);
     })
 }
 
@@ -73,11 +73,12 @@ function getGameStatus(game) {
 function getCompletedGames(games) {
     return new Promise((resolve, reject) => {
         let completedGames;
-        for (completedGames = 0; completedGames <= games.length; completedGames++) {
-            if (games[completedGames] != "CONCLUDED") {
-                break;
+        for (let i = 0; i <= games.length; i++) {
+            if (games[i].state == "CONCLUDED" || games[i] == "PENDING") {
+                completedGames++;
             }
         }
+        console.log("Comp games" + completedGames)
         resolve(completedGames);
     })
 }
@@ -150,6 +151,9 @@ function requestStandings() {
 }
 
 exports.dialogflowFirebaseFulfillment = functions.https.onRequest((request, response) => {
+
+
+
     console.log('Dialogflow Request headers: ' + JSON.stringify(request.headers));
     console.log('Dialogflow Request body: ' + JSON.stringify(request.body));
     if (request.body.result) {
@@ -169,11 +173,34 @@ function processV1Request(request, response) {
     let parameters = request.body.result.parameters; // https://dialogflow.com/docs/actions-and-parameters
     let inputContexts = request.body.result.contexts; // https://dialogflow.com/docs/contexts
     let requestSource = (request.body.originalRequest) ? request.body.originalRequest.source : undefined;
+
+
+    const requestPermission = (app) => {
+      app.askForPermission('To locate you', app.SupportedPermissions.DEVICE_PRECISE_LOCATION);
+    };
+
+    const userInfo = (app) => {
+        if (app.isPermissionGranted()) {
+            const address = app.getDeviceLocation().address;
+            app.tell(`You are at ${address}`);
+        } else {
+            app.tell('Sorry, I could not figure out where you are.');
+        }
+    };
+
+    const actions = new Map();
+
+
     const googleAssistantRequest = 'google'; // Constant to identify Google Assistant requests
     const app = new DialogflowApp({
         request: request,
         response: response
     });
+
+    actions.set('request_permission', requestPermission);
+    actions.set('user_info', userInfo);
+
+
     // Create handlers for Dialogflow actions as well as a 'default' handler
     const actionHandlers = {
         // The default welcome intent has been matched, welcome the user (https://dialogflow.com/docs/events#default_welcome_intent)
@@ -240,7 +267,7 @@ function processV1Request(request, response) {
                             .then((naturalDate) => {
                                 return getFutureMatch(team1, team2, startDate)
                                     .then((futureMatch) => {
-                                        return [liveMatch, (futureMatch + " " + naturalDate)]
+                                        return [liveMatch, ("No one is playing right now. " + futureMatch + " " + naturalDate)]
                                     });
                             })
                     } else {
@@ -255,6 +282,7 @@ function processV1Request(request, response) {
                                         }
                                     })
                                     .then((data) => {
+                                        console.log("d0 " + data[0])
                                         let completedGames = data[1];
                                         if (data[0] == "YES") {
                                             return getMatchStatus(team1, team2, scores)
@@ -288,15 +316,32 @@ function processV1Request(request, response) {
                 })
                 .catch(function(error) {
                     console.log(error)
-                    sendResponse("Sorry, but i'm having trouble talking to the Overwatch League right now, and couldn't find the match you wanted. Try again another time.")
+                    app.tell("Sorry, but i'm having trouble talking to the Overwatch League right now, and couldn't find the match you wanted. Try again another time.")
+                    throw error
                 })
         },
         'getCurrentGame': () => {
+            app.askForPermission('To locate you', app.SupportedPermissions.DEVICE_PRECISE_LOCATION);
+
             requestLiveMatch()
                 .then((resp) => {
-                    let liveMatch = resp.data.liveMatch.games;
+                    let liveMatch = resp.data.liveMatch;
+                    let matchId = liveMatch.id;
+                    let team1 = liveMatch.competitors[0];
+                    let team2 = liveMatch.competitors[1];
+                    let scores = liveMatch.scores;
+                    let status = liveMatch.liveStatus;
+                    let startDate = liveMatch.startDateTS;
+                    let games = liveMatch.games;
+
+                    if (status == "UPCOMING") {
+                        //TODO fix promises when UPCOMING
+                        return ("Nothing is being played right now. Try asking me again when the league is live.")
+                    }
                     return getCurrentGame(games)
-                        .then((currentGame) => {});
+                        .then((currentGame) => {
+                            return getGameStatus(team1, team2, currentGame);
+                        });
                 })
                 .then((textResp) => {
                     let responseToUser = {
@@ -315,7 +360,8 @@ function processV1Request(request, response) {
                 })
                 .catch(function(error) {
                     console.log(error)
-                    sendResponse("Sorry, but i'm having trouble talking to the Overwatch League right now, and couldn't find the game you wanted. Try again another time.")
+                    app.tell("Sorry, but i'm having trouble talking to the Overwatch League right now, and couldn't find the game you wanted. Try again another time.")
+                    throw error
                 })
         },
         'input.search': () => {
